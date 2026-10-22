@@ -39,6 +39,10 @@ export default function BookBySlugPage() {
   const [slot, setSlot] = useState<Slot | null>(null)
   const [duration, setDuration] = useState(30)
   const [error, setError] = useState('')
+  // dates and the zone come from the visitor's clock, which the server does
+  // not have, so they render after mount and the server sends the skeleton
+  const [ready, setReady] = useState(false)
+  useEffect(() => { setReady(true) }, [])
 
   const today = useMemo(() => startOfDay(new Date()), [])
   const tz = useMemo(() => Intl.DateTimeFormat().resolvedOptions().timeZone, [])
@@ -120,7 +124,7 @@ export default function BookBySlugPage() {
               {notFound ? 'not found' : owner ? `book with ${owner.name}` : ' '}
             </h1>
             {!notFound && (
-              <p className="text-sm text-zinc-400 tabular-nums">{duration} min · {zoneLabel(tz)}</p>
+              <p className="text-sm text-zinc-400 tabular-nums">{ready ? `${duration} min · ${zoneLabel(tz)}` : '\u00a0'}</p>
             )}
           </div>
         </header>
@@ -149,7 +153,7 @@ export default function BookBySlugPage() {
 
   return page(
     <>
-      <nav aria-label="days" className="mt-4">
+      {ready && <nav aria-label="days" className="mt-4">
         <div className="flex items-center justify-between">
           <button
             type="button"
@@ -201,11 +205,11 @@ export default function BookBySlugPage() {
             )
           })}
         </div>
-      </nav>
+      </nav>}
 
-      <section aria-label="times" className="mt-5">
+      <section aria-label="times" className={ready ? 'mt-5' : 'mt-[108px]'}>
         <h2 className="text-sm font-medium text-zinc-300">
-          {picked ? format(parseISO(picked), 'EEEE, MMMM d') : ' '}
+          {ready && picked ? format(parseISO(picked), 'EEEE, MMMM d') : '\u00a0'}
         </h2>
         {loading ? (
           <div className="mt-3 grid grid-cols-3 gap-2 sm:grid-cols-4 md:grid-cols-5" aria-busy="true">
