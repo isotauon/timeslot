@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
-import { startOfDay, addDays } from 'date-fns'
+import { startOfDay, addDays, format } from 'date-fns'
 import { getAllGoogleAccounts, getValidAccessTokenForAccount } from '@/lib/google/accounts'
 import { getFreeBusy } from '@/lib/google/calendar'
 import { generateSlots } from '@/lib/utils/slots'
@@ -25,51 +25,44 @@ async function getSessionEmail(): Promise<string | null> {
   }
 }
 
+const MAX_DAYS = 14
+
+// GET /api/availability?date=YYYY-MM-DD[&days=N][&slug=…]
+// One day by default; `days` asks for a run of days in one answer, so a
+// week costs one freebusy call and one bookings query instead of seven.
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const dateParam = searchParams.get('date')
   const slug = searchParams.get('slug')
+  const days = Math.min(MAX_DAYS, Math.max(1, parseInt(searchParams.get('days') || '1', 10) || 1))
 
-  if (!dateParam) {
+  if (!dateParam || !/^\d{4}-\d{2}-\d{2}$/.test(dateParam)) {
     return NextResponse.json({ error: 'Date parameter required' }, { status: 400 })
   }
 
   try {
-    // Parse the date for database queries (UTC)
-    const date = startOfDay(new Date(dateParam + 'T00:00:00'))
-    const nextDay = addDays(date, 1)
+    const first = startOfDay(new Date(dateParam + 'T00:00:00'))
+    const last = addDays(first, days)
 
     // Get Google accounts - either for specific slug owner or logged-in user's accounts
     let accounts: Awaited<ReturnType<typeof getAllGoogleAccounts>> = []
     let ownerEmail: string | null = null
 
-    console.log('=== Availability API ===')
-    console.log('Date:', dateParam, 'Slug:', slug)
-
     try {
       if (slug) {
-        // Look up the owner by booking slug
         const rows = await sql`
           SELECT owner_email FROM google_accounts WHERE booking_slug = ${slug} LIMIT 1
         `
         const slugOwner = rows[0]
-
-        console.log('Slug owner lookup result:', slugOwner)
-
         if (slugOwner?.owner_email) {
           ownerEmail = slugOwner.owner_email
           accounts = await getAllGoogleAccounts(ownerEmail || undefined)
-          console.log('Found', accounts.length, 'accounts for owner', ownerEmail)
-        } else {
-          console.log('No owner found for slug:', slug)
         }
       } else {
         const sessionEmail = await getSessionEmail()
-        console.log('Session email:', sessionEmail)
         if (sessionEmail) {
           ownerEmail = sessionEmail
           accounts = await getAllGoogleAccounts(sessionEmail)
-          console.log('Found', accounts.length, 'accounts for session')
         }
       }
     } catch (error) {
@@ -103,55 +96,55 @@ export async function GET(request: NextRequest) {
         min_notice_hours: 24,
         booking_window_days: 30
       }
-      console.log('Using default settings for owner:', ownerEmail)
-    } else {
-      console.log('Found settings for owner:', ownerEmail)
     }
 
-    // Get existing bookings for the date
+    // Existing bookings across the run, a day wide on each side so a slot
+    // near midnight in the owner's zone still meets its booking
     const bookings = await sql`
       SELECT * FROM bookings
-      WHERE start_time >= ${date.toISOString()}
-        AND start_time < ${nextDay.toISOString()}
+      WHERE start_time >= ${addDays(first, -1).toISOString()}
+        AND start_time < ${addDays(last, 1).toISOString()}
         AND status = 'confirmed'
     `
 
-    // Aggregate busy times from accounts
+    // Busy times from every connected calendar, one freebusy call per account
     let allBusyTimes: { start: string; end: string }[] = []
-
     for (const account of accounts) {
-      console.log('Processing account:', account.email)
       const accessToken = await getValidAccessTokenForAccount(account)
-      if (accessToken) {
-        const rawCalendarIds = account.calendar_ids as string[] | null | undefined
-        const calendarIds = rawCalendarIds && rawCalendarIds.length > 0 ? rawCalendarIds : ['primary']
-        console.log('Fetching busy times from calendars:', calendarIds)
-        try {
-          const busyTimes = await getFreeBusy(accessToken, calendarIds, date, nextDay)
-          console.log('Got', busyTimes.length, 'busy times from', account.email)
-          allBusyTimes = allBusyTimes.concat(busyTimes)
-        } catch (error) {
-          console.error(`Failed to fetch calendar for ${account.email}:`, error)
-        }
-      } else {
-        console.log('No valid access token for', account.email)
+      if (!accessToken) continue
+      const rawCalendarIds = account.calendar_ids as string[] | null | undefined
+      const calendarIds = rawCalendarIds && rawCalendarIds.length > 0 ? rawCalendarIds : ['primary']
+      try {
+        const busyTimes = await getFreeBusy(accessToken, calendarIds, addDays(first, -1), addDays(last, 1))
+        allBusyTimes = allBusyTimes.concat(busyTimes)
+      } catch (error) {
+        console.error(`Failed to fetch calendar for ${account.email}:`, error)
       }
     }
-    console.log('Total busy times:', allBusyTimes.length)
 
-    const slots = generateSlots(dateParam, settings as any, allBusyTimes, (bookings || []) as any)
+    const run = Array.from({ length: days }, (_, i) => {
+      const date = format(addDays(first, i), 'yyyy-MM-dd')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const slots = generateSlots(date, settings as any, allBusyTimes, (bookings || []) as any)
+      return {
+        date,
+        slots: slots.map(slot => ({
+          start: slot.start.toISOString(),
+          end: slot.end.toISOString(),
+          available: slot.available,
+          busy: slot.busy
+        }))
+      }
+    })
 
     return NextResponse.json({
-      date: dateParam,
       timezone: settings.timezone,
       slotDuration: settings.slot_duration_minutes,
       connectedAccounts: accounts.map(a => a.email),
-      slots: slots.map(slot => ({
-        start: slot.start.toISOString(),
-        end: slot.end.toISOString(),
-        available: slot.available,
-        busy: slot.busy
-      }))
+      days: run,
+      // the one-day shape, for callers that ask for one day
+      date: run[0].date,
+      slots: run[0].slots
     })
   } catch (error) {
     console.error('Availability error:', error)

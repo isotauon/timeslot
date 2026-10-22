@@ -21,7 +21,8 @@ const Input = forwardRef<HTMLInputElement, InputProps>(
         <input
           ref={ref}
           id={inputId}
-          className={`w-full px-3 py-2 bg-zinc-800 border rounded-lg text-white placeholder-zinc-500 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all ${
+          aria-invalid={error ? true : undefined}
+          className={`w-full min-h-11 px-3 py-2 bg-zinc-800 border rounded-lg text-base text-white placeholder-zinc-400 focus:outline-none focus:ring-2 focus:ring-violet-500 focus:border-transparent transition-all ${
             error ? 'border-red-500' : 'border-zinc-700'
           } ${className}`}
           {...props}
