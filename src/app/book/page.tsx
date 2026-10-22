@@ -287,7 +287,7 @@ function BookPageContent() {
     return { top: `${minY}px`, height: `${height}px` }
   }, [isDragging, dragDayIndex, dragStartY, dragCurrentY])
 
-  const handleSubmit = async (data: { guestName: string; guestEmail: string; meetingTitle: string; message: string }) => {
+  const handleSubmit = async (data: { guestName: string; guestEmail: string; message: string }) => {
     if (!selectedSlot) return
 
     try {
@@ -297,7 +297,6 @@ function BookPageContent() {
         body: JSON.stringify({
           guestName: data.guestName,
           guestEmail: data.guestEmail,
-          meetingTitle: data.meetingTitle,
           message: data.message,
           startTime: selectedSlot.slot.start,
           endTime: selectedSlot.slot.end,
@@ -346,8 +345,10 @@ function BookPageContent() {
         <DynamicBackground />
         <div className="max-w-md mx-auto">
           <BookingForm
-            selectedDate={parseISO(selectedSlot.date)}
-            selectedSlot={selectedSlot.slot}
+            start={selectedSlot.slot.start}
+            end={selectedSlot.slot.end}
+            zone={Intl.DateTimeFormat().resolvedOptions().timeZone}
+            error={error || undefined}
             onSubmit={handleSubmit}
             onBack={handleBack}
           />

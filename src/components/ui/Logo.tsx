@@ -78,7 +78,7 @@ export default function Logo({ size = 'md', showText = true, href = '/' }: LogoP
 
   if (href) {
     return (
-      <Link href={href} className="focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500 rounded-lg">
+      <Link href={href} aria-label={showText ? undefined : 'timeslot'} className="inline-flex min-h-11 min-w-11 items-center justify-center rounded-lg focus:outline-none focus-visible:ring-2 focus-visible:ring-zinc-500">
         {logoContent}
       </Link>
     )

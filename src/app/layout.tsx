@@ -7,8 +7,8 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: "timeslot - book an appointment",
-  description: "Schedule a meeting with me at a time that works for both of us.",
+  title: "timeslot",
+  description: "book a time",
   manifest: "/manifest.json",
   icons: {
     icon: [
@@ -24,10 +24,10 @@ export const metadata: Metadata = {
 };
 
 export const viewport: Viewport = {
-  themeColor: "#8B5CF6",
+  themeColor: "#09090b",
   width: "device-width",
   initialScale: 1,
-  maximumScale: 1,
+  viewportFit: "cover",
 };
 
 export default function RootLayout({
